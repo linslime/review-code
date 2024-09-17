@@ -16,12 +16,12 @@ class Config:
 	end_time = 1000
 	# 步长
 	step = 0.1
-	# 进程数
-	processes_count = 12
-	# param数据保存路径
-	param_path = './params.csv'
-	# 信号数据保存路径
-	signal_data_path = './signal_data.csv'
+	# 进行计算的进程数
+	processes_count = 11
+	# 保存数据的进程数
+	save_result_process_count = 50
+	# 数据保存路径
+	path = '../data/'
 
 
 def create_wave():
@@ -48,19 +48,20 @@ def create_wave():
 		process = multiprocessing.Process(target=run_create_wave, args=(task_queue, result_queue, lock))
 		process.start()
 		processes.append(process)
+	# 创建结果处理锁
+	result_lock = multiprocessing.Manager().Lock()
+	# 创建多进程保存结果
+	for i in range(Config.save_result_process_count):
+		process = multiprocessing.Process(target=save_wave, args=(result_queue, result_lock))
+		process.start()
+		processes.append(process)
 	# 等待多进程完成
 	for process in processes:
 		process.join()
-	# result存放结果
-	result = list()
-	for i in range(Config.data_size):
-		result.append(result_queue.get())
+	
 	# 保存参数结果, 改变task_list结构
 	params = pd.DataFrame([[task_list[i][0]] + [task_list[i][1][j][k] for j in range(len(task_list[i][1])) for k in range(len(task_list[i][1][j]))] for i in range(len(task_list))])
-	# 保存结果，改变result结构
-	result = pd.DataFrame([[result[i][0]] + [result[i][1][j] for j in range(len(result[i][1]))]for i in range(len(result))])
-	params.to_csv(Config.param_path)
-	result.to_csv(Config.signal_data_path)
+	params.to_csv(Config.path + 'params.csv')
 	
 	
 def create_one_wave(params):
@@ -82,8 +83,20 @@ def run_create_wave(task_queue, result_queue, lock):
 			lock.release()
 			data = create_one_wave(task)
 			result_queue.put((index, data))
-			
-		else :
+		else:
+			lock.release()
+			break
+
+	
+def save_wave(queue, lock):
+	while True:
+		lock.acquire()
+		if not queue.empty():
+			index, data = queue.get()
+			lock.release()
+			df = pd.DataFrame(data)
+			df.to_csv(Config.path + 'wave/' + str(index) + '.csv')
+		else:
 			lock.release()
 			break
 
